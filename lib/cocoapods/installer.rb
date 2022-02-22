@@ -1,4 +1,6 @@
 require 'active_support/core_ext/string/inflections'
+require 'concurrent/atomic/count_down_latch'
+require 'concurrent/executor/fixed_thread_pool'
 require 'fileutils'
 require 'cocoapods/podfile'
 
@@ -510,7 +512,12 @@ module Pod
 
       # Download pods in parallel before installing if the option is set
       if installation_options.parallel_pod_downloads
-        root_specs.sort_by(&:name).each do |spec|
+        thread_pool = Concurrent::FixedThreadPool.new(40, :idletime => 1000)
+
+        sorted_root_specs = root_specs.sort_by(&:name)
+        latch = Concurrent::CountDownLatch.new(sorted_root_specs.count)
+
+        sorted_root_specs.each do |spec|
           if pods_to_install.include?(spec.name)
             if sandbox_state.changed.include?(spec.name) && sandbox.manifest
               current_version = spec.version
@@ -528,14 +535,22 @@ module Pod
               title = "Downloading #{spec}"
             end
             UI.titled_section(title.green, title_options) do
-              download_source_of_pod(spec.name)
+              thread_pool.post do
+                download_source_of_pod(spec.name)
+                latch.count_down
+              end
             end
+          else
+            latch.count_down
           end
         end
+
+        latch.wait
+        thread_pool.shutdown
       end
 
       # Install pods, which includes downloading only if parallel_pod_downloads is set to false
-      root_specs.sort_by(&:name).each do |spec|
+      sorted_root_specs.each do |spec|
         if pods_to_install.include?(spec.name)
           if sandbox_state.changed.include?(spec.name) && sandbox.manifest
             current_version = spec.version
@@ -627,6 +642,8 @@ module Pod
     # @return [void]
     #
     def download_source_of_pod(pod_name)
+      return if sandbox.local?(pod_name) || sandbox.predownloaded?(pod_name)
+
       pod_downloader = create_pod_downloader(pod_name)
       pod_downloader.download!
     end
