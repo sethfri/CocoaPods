@@ -531,19 +531,29 @@ module Pod
         thread_pool.wait_for_termination
       end
 
+      install_thread_pool_size = installation_options.parallel_pod_download_thread_pool_size
+      install_thread_pool = Concurrent::FixedThreadPool.new(20, :idletime => 300)
+
       # Install pods, which includes downloading only if parallel_pod_downloads is set to false
       sorted_root_specs.each do |spec|
         if pods_to_install.include?(spec.name)
           title = section_title(spec, 'Installing')
           UI.titled_section(title.green, title_options) do
-            install_source_of_pod(spec.name)
+            install_thread_pool.post do
+              install_source_of_pod(spec.name)
+            end
           end
         else
           UI.section("Using #{spec}", title_options[:verbose_prefix]) do
-            create_pod_installer(spec.name)
+            install_thread_pool.post do
+              create_pod_installer(spec.name)
+            end
           end
         end
       end
+
+      install_thread_pool.shutdown
+      install_thread_pool.wait_for_termination
     end
 
     def section_title(spec, current_action)

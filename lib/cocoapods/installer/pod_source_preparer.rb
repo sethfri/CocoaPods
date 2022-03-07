@@ -12,6 +12,8 @@ module Pod
       #
       attr_reader :path
 
+      @@mutex = Mutex.new
+
       # Initialize a new instance
       #
       # @param [Specification] spec the root specification of the Pod.
@@ -56,16 +58,19 @@ module Pod
       #
       def run_prepare_command
         return unless spec.prepare_command
-        UI.section(' > Running prepare command', '', 1) do
-          Dir.chdir(path) do
-            begin
-              ENV.delete('CDPATH')
-              ENV['COCOAPODS_VERSION'] = Pod::VERSION
-              prepare_command = spec.prepare_command.strip_heredoc.chomp
-              full_command = "\nset -e\n" + prepare_command
-              bash!('-c', full_command)
-            ensure
-              ENV.delete('COCOAPODS_VERSION')
+
+        @@mutex.synchronize do
+          UI.section(' > Running prepare command', '', 1) do
+            Dir.chdir(path) do
+              begin
+                ENV.delete('CDPATH')
+                ENV['COCOAPODS_VERSION'] = Pod::VERSION
+                prepare_command = spec.prepare_command.strip_heredoc.chomp
+                full_command = "\nset -e\n" + prepare_command
+                bash!('-c', full_command)
+              ensure
+                ENV.delete('COCOAPODS_VERSION')
+              end
             end
           end
         end
