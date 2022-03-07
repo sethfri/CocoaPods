@@ -512,7 +512,8 @@ module Pod
 
       # Download pods in parallel before installing if the option is set
       if installation_options.parallel_pod_downloads
-        thread_pool = Concurrent::FixedThreadPool.new(40, :idletime => 1000)
+        thread_pool_size = installation_options.parallel_pod_download_thread_pool_size
+        thread_pool = Concurrent::FixedThreadPool.new(thread_pool_size, :idletime => 2000)
 
         sorted_root_specs = root_specs.sort_by(&:name)
         latch = Concurrent::CountDownLatch.new(sorted_root_specs.count)
