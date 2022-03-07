@@ -510,13 +510,12 @@ module Pod
       pods_to_install = sandbox_state.added | sandbox_state.changed
       title_options = { :verbose_prefix => '-> '.green }
 
+      sorted_root_specs = root_specs.sort_by(&:name)
+
       # Download pods in parallel before installing if the option is set
       if installation_options.parallel_pod_downloads
         thread_pool_size = installation_options.parallel_pod_download_thread_pool_size
         thread_pool = Concurrent::FixedThreadPool.new(thread_pool_size, :idletime => 2000)
-
-        sorted_root_specs = root_specs.sort_by(&:name)
-        latch = Concurrent::CountDownLatch.new(sorted_root_specs.count)
 
         sorted_root_specs.each do |spec|
           if pods_to_install.include?(spec.name)
@@ -538,16 +537,13 @@ module Pod
             UI.titled_section(title.green, title_options) do
               thread_pool.post do
                 download_source_of_pod(spec.name)
-                latch.count_down
               end
             end
-          else
-            latch.count_down
           end
         end
 
-        latch.wait
         thread_pool.shutdown
+        thread_pool.wait_for_termination
       end
 
       # Install pods, which includes downloading only if parallel_pod_downloads is set to false
